@@ -1,0 +1,12 @@
+node_modules/
+.env
+media/wip/*
+media/outbound/*
+media/inbound/*
+!media/wip/.gitkeep
+!media/outbound/.gitkeep
+!media/inbound/.gitkeep
+
+# Generated artifacts
+*.log
+.DS_Store

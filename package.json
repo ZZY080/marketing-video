@@ -1,0 +1,27 @@
+{
+  "name": "marketing-video",
+  "version": "1.0.0",
+  "description": "Standalone marketing video pipeline: HTML slides -> screenshots -> TTS -> subtitles -> MP4.",
+  "type": "commonjs",
+  "main": "scripts/cli.ts",
+  "scripts": {
+    "video": "tsx scripts/cli.ts",
+    "init": "tsx scripts/cli.ts init",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@google/genai": "^1.46.0",
+    "commander": "^11.0.0",
+    "dotenv": "^17.3.1",
+    "playwright": "^1.59.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "license": "MIT"
+}

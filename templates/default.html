@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1920">
+  <title>Video Slides</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Noto+Sans+SC:wght@400;500;600;700;800&family=Noto+Serif+SC:wght@400;500;600;700&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-page: #f3f0f6;
+      --bg-slide: #fcfbfd;
+      --bg-slide-alt: #f6f3f8;
+      --bg-panel: rgba(255, 255, 255, 0.92);
+      --bg-panel-strong: #ffffff;
+      --bg-placeholder: linear-gradient(140deg, #faf7fb 0%, #efedf5 100%);
+      --border-soft: rgba(72, 67, 108, 0.08);
+      --border-strong: rgba(72, 67, 108, 0.14);
+      --accent: #6562a9;
+      --accent-soft: #efedfb;
+      --accent-secondary: #8d89d6;
+      --accent-ink: #4e4a87;
+      --success: #2f9d6a;
+      --warm: #efb15e;
+      --text-primary: #18152b;
+      --text-secondary: #5f5a7a;
+      --text-muted: #8a86a2;
+      --shadow-soft: 0 12px 30px rgba(60, 56, 95, 0.08);
+      --shadow-card: 0 16px 42px rgba(60, 56, 95, 0.11);
+      --font-sans: 'Plus Jakarta Sans', 'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+      --font-serif: 'Instrument Serif', 'Noto Serif SC', 'Songti SC', 'STSong', Georgia, serif;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html {
+      text-rendering: optimizeLegibility;
+    }
+
+    body {
+      background: radial-gradient(circle at 8% 10%, rgba(101, 98, 169, 0.10), transparent 26%), var(--bg-page);
+      font-family: var(--font-sans);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    .slide {
+      width: 1920px;
+      height: 1080px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      color: var(--text-primary);
+      background: var(--bg-slide);
+      isolation: isolate;
+    }
+
+    .slide > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .bg-soft {
+      background:
+        radial-gradient(circle at 12% 12%, rgba(101, 98, 169, 0.14), transparent 26%),
+        radial-gradient(circle at 84% 18%, rgba(141, 137, 214, 0.12), transparent 24%),
+        linear-gradient(160deg, #ffffff 0%, #faf7ff 58%, #f4f0fb 100%);
+    }
+
+    .bg-spotlight {
+      background:
+        radial-gradient(circle at 78% 20%, rgba(101, 98, 169, 0.15), transparent 22%),
+        radial-gradient(circle at 20% 100%, rgba(239, 177, 94, 0.12), transparent 30%),
+        linear-gradient(180deg, #fcfbff 0%, #f5f1fc 100%);
+    }
+
+    .bg-grid {
+      background:
+        linear-gradient(180deg, #fcfbff 0%, #f4effa 100%);
+    }
+
+    .bg-panel {
+      background:
+        radial-gradient(circle at 0% 100%, rgba(101, 98, 169, 0.12), transparent 30%),
+        linear-gradient(135deg, #faf8ff 0%, #f1ecfb 100%);
+    }
+
+    .has-grid::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        repeating-linear-gradient(0deg, transparent, transparent 59px, rgba(101, 98, 169, 0.06) 59px, rgba(101, 98, 169, 0.06) 60px),
+        repeating-linear-gradient(90deg, transparent, transparent 59px, rgba(101, 98, 169, 0.06) 59px, rgba(101, 98, 169, 0.06) 60px);
+      opacity: 0.34;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .has-footer::before {
+      content: '';
+      position: absolute;
+      left: 64px;
+      right: 64px;
+      bottom: 32px;
+      height: 6px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(101, 98, 169, 0.08), var(--accent), rgba(101, 98, 169, 0.08));
+      z-index: 2;
+    }
+
+    .orb {
+      position: absolute;
+      border-radius: 999px;
+      filter: blur(8px);
+      opacity: 0.55;
+      z-index: 0;
+    }
+
+    .orb.one {
+      width: 300px;
+      height: 300px;
+      top: -60px;
+      right: 120px;
+      background: rgba(141, 137, 214, 0.20);
+    }
+
+    .orb.two {
+      width: 360px;
+      height: 360px;
+      left: -120px;
+      bottom: -140px;
+      background: rgba(101, 98, 169, 0.16);
+    }
+
+    /* ── Typography scale (bumped up for 1920×1080 legibility) ─────────────────── */
+    /* Minimum readable font size in any slide body element: 26px.                  */
+    /* Maximum bullet points per slide: 4. Exceeding 4 points = split into 2 pages. */
+    .t-hero { font-size: 76px; font-weight: 800; line-height: 1.08; letter-spacing: -2.4px; }
+    .t-display { font-size: 58px; font-weight: 760; line-height: 1.12; letter-spacing: -1.5px; }
+    .t-title { font-size: 50px; font-weight: 720; line-height: 1.16; letter-spacing: -1.2px; }
+
+    .one-line {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: clip;
+    }
+    .t-subtitle { font-size: 36px; font-weight: 500; line-height: 1.42; }
+    .t-body { font-size: 30px; line-height: 1.62; color: var(--text-secondary); }
+    .t-small { font-size: 26px; line-height: 1.58; color: var(--text-muted); }
+
+    :lang(zh),
+    :lang(zh-CN),
+    :lang(zh-Hans),
+    .lang-zh {
+      word-break: break-word;
+    }
+
+    :lang(zh) .t-hero,
+    :lang(zh-CN) .t-hero,
+    :lang(zh-Hans) .t-hero,
+    .lang-zh .t-hero {
+      letter-spacing: -1.2px;
+      line-height: 1.14;
+    }
+
+    :lang(zh) .t-display,
+    :lang(zh-CN) .t-display,
+    :lang(zh-Hans) .t-display,
+    .lang-zh .t-display {
+      letter-spacing: -0.6px;
+      line-height: 1.18;
+    }
+
+    :lang(zh) .t-title,
+    :lang(zh-CN) .t-title,
+    :lang(zh-Hans) .t-title,
+    .lang-zh .t-title {
+      letter-spacing: -0.3px;
+      line-height: 1.22;
+    }
+
+    :lang(zh) .eyebrow,
+    :lang(zh-CN) .eyebrow,
+    :lang(zh-Hans) .eyebrow,
+    .lang-zh .eyebrow,
+    :lang(zh) .page-num,
+    :lang(zh-CN) .page-num,
+    :lang(zh-Hans) .page-num,
+    .lang-zh .page-num {
+      letter-spacing: 1px;
+      text-transform: none;
+    }
+
+    :lang(zh) .quote-text,
+    :lang(zh-CN) .quote-text,
+    :lang(zh-Hans) .quote-text,
+    .lang-zh .quote-text {
+      font-style: normal;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 17px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2.2px;
+      color: var(--accent);
+    }
+
+    .eyebrow::before {
+      content: '';
+      width: 38px;
+      height: 2px;
+      border-radius: 999px;
+      background: var(--accent);
+    }
+
+    .serif { font-family: var(--font-serif); }
+    .italic { font-style: italic; }
+    .text-accent { color: var(--accent); }
+    .text-ink { color: var(--accent-ink); }
+    .text-green { color: var(--success); }
+    .text-gold { color: var(--warm); }
+
+    .pad-slide { padding: 72px 88px; }
+    .pad-wide { padding: 88px 108px; }
+    .pad-center { padding: 110px 180px; }
+
+    .flex-col { display: flex; flex-direction: column; }
+    .flex-row { display: flex; flex-direction: row; }
+    .items-center { align-items: center; }
+    .justify-center { justify-content: center; }
+    .justify-between { justify-content: space-between; }
+    .flex-1 { flex: 1; }
+    .text-center { text-align: center; }
+    .mt-auto { margin-top: auto; }
+
+    .gap-12 { gap: 12px; }
+    .gap-16 { gap: 16px; }
+    .gap-20 { gap: 20px; }
+    .gap-24 { gap: 24px; }
+    .gap-28 { gap: 28px; }
+    .gap-32 { gap: 32px; }
+    .gap-36 { gap: 36px; }
+    .gap-40 { gap: 40px; }
+    .gap-48 { gap: 48px; }
+
+    .card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-soft);
+      border-radius: 26px;
+      box-shadow: var(--shadow-soft);
+      backdrop-filter: blur(10px);
+    }
+
+    .card-strong {
+      background: var(--bg-panel-strong);
+      border: 1px solid var(--border-strong);
+      border-radius: 28px;
+      box-shadow: var(--shadow-card);
+    }
+
+    .accent-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 18px;
+      border-radius: 999px;
+      background: rgba(101, 98, 169, 0.10);
+      border: 1px solid rgba(101, 98, 169, 0.12);
+      color: var(--accent-ink);
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .accent-pill::before {
+      content: '';
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--accent);
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 22px;
+    }
+
+    .stat-card {
+      padding: 34px;
+      min-height: 240px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .stat-value {
+      font-size: 68px;
+      font-weight: 800;
+      letter-spacing: -2.4px;
+      color: var(--accent);
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-size: 26px;
+      font-weight: 600;
+      line-height: 1.50;
+      color: var(--text-secondary);
+    }
+
+    .check-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .check-list li {
+      position: relative;
+      padding-left: 50px;
+      font-size: 30px;
+      line-height: 1.6;
+      color: var(--text-secondary);
+    }
+
+    .check-list li::before {
+      content: '✓';
+      position: absolute;
+      left: 0;
+      top: 4px;
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(101, 98, 169, 0.10);
+      color: var(--accent);
+      font-size: 19px;
+      font-weight: 800;
+    }
+
+    .image-placeholder {
+      position: relative;
+      border-radius: 26px;
+      background: var(--bg-placeholder);
+      border: 1px dashed rgba(101, 98, 169, 0.18);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 36px;
+      color: var(--accent-ink);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+    }
+
+    .image-fill {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      border-radius: inherit;
+      position: relative;
+      z-index: 1;
+    }
+
+    .image-placeholder::before,
+    .image-placeholder::after {
+      content: '';
+      position: absolute;
+      border-radius: 999px;
+      background: rgba(101, 98, 169, 0.10);
+    }
+
+    .image-placeholder::before {
+      width: 150px;
+      height: 150px;
+      top: -36px;
+      right: -22px;
+    }
+
+    .image-placeholder::after {
+      width: 90px;
+      height: 90px;
+      bottom: -18px;
+      left: 30px;
+    }
+
+    .placeholder-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      align-items: center;
+      text-align: center;
+      max-width: 460px;
+    }
+
+    .placeholder-icon {
+      width: 82px;
+      height: 82px;
+      border-radius: 22px;
+      display: grid;
+      place-items: center;
+      background: rgba(101, 98, 169, 0.12);
+      color: var(--accent);
+      font-size: 30px;
+      font-weight: 700;
+    }
+
+    .placeholder-title {
+      font-size: 30px;
+      font-weight: 700;
+      line-height: 1.25;
+    }
+
+    .placeholder-copy {
+      font-size: 22px;
+      line-height: 1.6;
+      color: var(--text-secondary);
+    }
+
+    .placeholder-tag {
+      position: absolute;
+      top: 22px;
+      left: 22px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(101, 98, 169, 0.14);
+      color: var(--accent);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 40px;
+      align-items: stretch;
+      flex: 1;
+      width: 100%;
+    }
+
+    .media-mosaic {
+      display: grid;
+      grid-template-columns: 1fr;
+      grid-template-rows: minmax(0, 1fr) auto;
+      gap: 22px;
+      min-height: 0;
+    }
+
+    .media-mosaic .image-placeholder:first-child {
+      grid-row: auto;
+    }
+
+    .split-layout {
+      display: grid;
+      grid-template-columns: 1.12fr 0.88fr;
+      gap: 32px;
+      flex: 1;
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .flow-layout {
+      display: grid;
+      grid-template-columns: 1.08fr 0.92fr;
+      gap: 28px;
+      flex: 1;
+      align-items: stretch;
+    }
+
+    .flow-steps {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 18px;
+    }
+
+    .timeline-step {
+      padding: 30px 32px;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .step-number {
+      width: 52px;
+      height: 52px;
+      border-radius: 18px;
+      display: grid;
+      place-items: center;
+      background: rgba(101, 98, 169, 0.10);
+      color: var(--accent);
+      font-size: 24px;
+      font-weight: 800;
+    }
+
+    .quote-card {
+      padding: 64px 70px;
+      max-width: 1180px;
+    }
+
+    .quote-mark {
+      font-size: 140px;
+      line-height: 0.72;
+      color: rgba(101, 98, 169, 0.18);
+      font-family: Georgia, serif;
+    }
+
+    .quote-text {
+      font-size: 50px;
+      line-height: 1.38;
+      color: var(--text-primary);
+      font-family: var(--font-serif);
+      font-style: italic;
+    }
+
+    .quote-attribution {
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    .cta-shell {
+      display: grid;
+      grid-template-columns: 1.18fr 0.82fr;
+      gap: 30px;
+      width: 100%;
+      flex: 1;
+      padding-top: 44px;
+    }
+
+    .cta-panel {
+      padding: 46px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .cta-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 240px;
+      padding: 20px 28px;
+      border-radius: 18px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 22px;
+      font-weight: 700;
+      box-shadow: 0 14px 30px rgba(101, 98, 169, 0.24);
+    }
+
+    .info-rail {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .info-chip {
+      padding: 22px 24px;
+      border-radius: 20px;
+      background: rgba(101, 98, 169, 0.06);
+      border: 1px solid rgba(101, 98, 169, 0.10);
+      color: var(--accent-ink);
+      font-size: 24px;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .page-num {
+      position: absolute;
+      right: 84px;
+      bottom: 56px;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 1.6px;
+      color: var(--text-muted);
+      z-index: 2;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.52);
+      border: 1px solid rgba(101, 98, 169, 0.10);
+      backdrop-filter: blur(6px);
+    }
+
+    .corner-logo {
+      position: absolute;
+      top: 16px;
+      right: 18px;
+      z-index: 3;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 7px 10px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.68);
+      border: 1px solid rgba(101, 98, 169, 0.08);
+      box-shadow: 0 6px 18px rgba(67, 56, 125, 0.08);
+      backdrop-filter: blur(8px);
+      pointer-events: none;
+    }
+
+    .corner-logo img {
+      display: block;
+      width: 106px;
+      height: auto;
+      object-fit: contain;
+    }
+
+    .cover-logo {
+      top: 16px;
+      left: 18px;
+      right: auto;
+      padding: 7px 10px;
+    }
+
+    .cover-logo img {
+      width: 106px;
+    }
+
+    .slide-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent-ink);
+    }
+
+    .slide-kicker::before {
+      content: '';
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      background: var(--accent);
+    }
+
+    .module-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .module-card {
+      padding: 28px 30px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .module-card h3 {
+      font-size: 34px;
+      line-height: 1.28;
+      color: var(--text-primary);
+    }
+
+    .module-card p {
+      font-size: 26px;
+      line-height: 1.6;
+      color: var(--text-secondary);
+    }
+
+    .tip-grid {
+      display: grid;
+      grid-template-columns: 1.14fr 0.86fr;
+      gap: 30px;
+      width: 100%;
+      align-items: stretch;
+    }
+
+    .tip-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .tip-list li {
+      padding: 26px 30px;
+      border-radius: 20px;
+      background: rgba(101, 98, 169, 0.06);
+      border: 1px solid rgba(101, 98, 169, 0.10);
+      font-size: 28px;
+      line-height: 1.6;
+      color: var(--text-secondary);
+    }
+
+    .logo-safe-zone {
+      padding-right: 168px;
+    }
+
+    /* Single-line headline for video frames (avoid vertical overflow with body content below) */
+    .t-display.slide-title-one-line {
+      white-space: nowrap;
+      font-size: clamp(42px, 2.75vw, 58px);
+      line-height: 1.12;
+      letter-spacing: -0.4px;
+      overflow: hidden;
+      text-overflow: clip;
+    }
+
+    /* Timeline + flow pages: tighter header so steps fit */
+    .slide.flow-slide-compact .logo-safe-zone {
+      margin-bottom: 14px !important;
+    }
+    .slide.flow-slide-compact .flow-layout {
+      flex: 1;
+      min-height: 0;
+    }
+    .slide.flow-slide-compact .flow-layout .image-placeholder {
+      min-height: 300px !important;
+    }
+
+    /* Video outro: contact / disclaimer — no buttons (not a web page) */
+    .outro-contact-line {
+      font-size: 28px;
+      line-height: 1.5;
+      color: var(--text-secondary);
+      max-width: 820px;
+    }
+    .outro-disclaimer {
+      font-size: 26px;
+      line-height: 1.55;
+      color: var(--text-muted);
+      max-width: 860px;
+    }
+  </style>
+</head>
+<body>
+  <!--
+    Default layout reference (replace body sections per approved outline; keep full <style>):
+    - Light theme, accent #6562a9; backgrounds stay CSS-only (no full-bleed photos as slide bg).
+    - Page visuals: ./images/*.jpg or the built-in visual blocks in the body; logo from ../../assets/.
+    - Default language is Chinese (<html lang="zh-CN">); switch to other languages by changing the lang attribute and translating visible copy.
+    - One slide = one message. MAX 4 bullet points per content slide — split into two slides if more needed.
+    - Minimum font-size in any inline style or element: 26px. Never set font-size below 26px anywhere.
+    - If a slide feels empty, enlarge the visual or the key number instead of adding filler paragraphs.
+    - Keep at least one .image-placeholder or a real content <img> on each slide; screenshot uses these blocks to trigger scripts/image.ts auto-fill.
+    - Replace placeholder tag/title/copy with slide-specific keywords so the image prompt stays aligned with the page topic.
+    - Final slide defaults to a content declaration: "This video was produced by Leadvisor Global; content provided by <source institution>."
+      If the source article does not clearly name an institution, stop and ask the user for the institution before finalizing the slide.
+    - IMAGE NO-TEXT RULE: placeholder-title / placeholder-copy are prompts passed to the AI image generator.
+      Write them as scene/subject descriptions only — no numbers, no quoted text, no labels to render.
+      The AI image must be completely text-free (no letters, digits, signs, screens, documents with text,
+      watermarks, logos, or any readable symbol). This is enforced in the image generation prompt automatically,
+      but also keep the placeholder copy free of instruction-style text so the prompt stays clean.
+  -->
+
+  <section class="slide pad-wide bg-soft has-grid has-footer">
+    <div class="corner-logo cover-logo">
+      <img src="../../assets/leadvisor_platform_logo.png" alt="Leadvisor Platform logo">
+    </div>
+    <div class="orb one"></div>
+    <div class="orb two"></div>
+    <div class="hero-grid">
+      <div class="flex-col justify-center gap-28">
+        <span class="eyebrow">开场</span>
+        <div class="flex-col gap-20">
+          <h1 class="t-hero one-line">聚焦 <span class="text-accent">&lt;国家&gt;</span> · <span class="text-ink">&lt;主题&gt;</span></h1>
+          <p class="t-subtitle" style="max-width: 720px; color: var(--text-secondary);">
+            一句话点出变化，直接落到判断。
+          </p>
+        </div>
+      </div>
+      <div class="media-mosaic">
+        <div class="image-placeholder card-strong">
+          <span class="placeholder-tag">封面主视觉</span>
+          <div class="placeholder-content">
+            <div class="placeholder-icon">主视觉</div>
+            <div class="placeholder-title">贴合开场主题的国家场景、地图或市场画面</div>
+            <div class="placeholder-copy">以一张沉稳的主视觉让观众立刻进入对应的国家、行业或场景。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide pad-slide bg-grid has-grid has-footer">
+    <div class="corner-logo">
+      <img src="../../assets/leadvisor_platform_logo.png" alt="Leadvisor Platform logo">
+    </div>
+    <div class="flex-col gap-20 logo-safe-zone" style="margin-bottom: 36px;">
+      <span class="eyebrow">背景</span>
+      <h2 class="t-display one-line">先交代背景，再谈机制。</h2>
+    </div>
+    <div class="split-layout">
+      <div class="card-strong" style="padding: 44px 46px; display: flex; flex-direction: column; justify-content: center; gap: 28px;">
+        <ul class="check-list">
+          <li>只保留本页必须知道的三件事。</li>
+          <li>每条一行，避免说明书式长段落。</li>
+          <li>细节与推导留给口播展开。</li>
+        </ul>
+      </div>
+      <div class="image-placeholder card">
+        <span class="placeholder-tag">背景画面</span>
+        <div class="placeholder-content">
+          <div class="placeholder-icon">场景</div>
+          <div class="placeholder-title">能落地背景的场景、文件或政策画面</div>
+          <div class="placeholder-copy">选一张让故事感真实却不抢标题的画面。</div>
+        </div>
+      </div>
+    </div>
+    <span class="page-num">02</span>
+  </section>
+
+  <section class="slide pad-slide bg-spotlight has-footer">
+    <div class="corner-logo">
+      <img src="../../assets/leadvisor_platform_logo.png" alt="Leadvisor Platform logo">
+    </div>
+    <div class="flex-col gap-16 logo-safe-zone" style="margin-bottom: 36px;">
+      <span class="eyebrow">关键事实</span>
+      <h2 class="t-display one-line">只留三个推动判断的数字。</h2>
+    </div>
+    <div class="flex-row gap-24" style="flex: 1; align-items: stretch;">
+      <div class="flex-col gap-24" style="flex: 1.04; justify-content: center;">
+        <div class="stat-grid">
+          <div class="stat-card card">
+            <div class="stat-value">&lt;01&gt;</div>
+            <div class="stat-label">希望观众记住的第一个关键数字。</div>
+          </div>
+          <div class="stat-card card">
+            <div class="stat-value">&lt;02&gt;</div>
+            <div class="stat-label">强化紧迫感或对比度的第二个数字。</div>
+          </div>
+          <div class="stat-card card">
+            <div class="stat-value">&lt;03&gt;</div>
+            <div class="stat-label">指向行动或影响的第三个数字。</div>
+          </div>
+        </div>
+      </div>
+      <div class="image-placeholder card-strong" style="flex: 0.82;">
+        <span class="placeholder-tag">佐证画面</span>
+        <div class="placeholder-content">
+          <div class="placeholder-icon">证据</div>
+          <div class="placeholder-title">能佐证数字的场景或画面</div>
+          <div class="placeholder-copy">保持克制的证据画面，让数字成为主角。</div>
+        </div>
+      </div>
+    </div>
+    <span class="page-num">03</span>
+  </section>
+
+  <section class="slide pad-slide bg-panel has-grid has-footer flow-slide-compact">
+    <div class="corner-logo">
+      <img src="../../assets/leadvisor_platform_logo.png" alt="Leadvisor Platform logo">
+    </div>
+    <div class="flex-col gap-16 logo-safe-zone" style="margin-bottom: 28px;">
+      <span class="eyebrow">三步流程</span>
+      <h2 class="t-display one-line">三步之内，讲完逻辑。</h2>
+    </div>
+    <div class="flow-layout">
+      <div class="flow-steps">
+        <div class="timeline-step card" style="padding: 24px 28px; gap: 12px;">
+          <div class="step-number">1</div>
+          <h3 class="t-title" style="font-size: 32px;">起点</h3>
+          <p class="t-body" style="font-size: 26px;">一句话交代问题起点或外部变化。</p>
+        </div>
+        <div class="timeline-step card" style="padding: 24px 28px; gap: 12px;">
+          <div class="step-number">2</div>
+          <h3 class="t-title" style="font-size: 32px;">变化</h3>
+          <p class="t-body" style="font-size: 26px;">点出机制、政策或动作本身。</p>
+        </div>
+        <div class="timeline-step card" style="padding: 24px 28px; gap: 12px;">
+          <div class="step-number">3</div>
+          <h3 class="t-title" style="font-size: 32px;">影响</h3>
+          <p class="t-body" style="font-size: 26px;">落到结果、风险或下一步判断。</p>
+        </div>
+      </div>
+      <div class="card-strong flex-col" style="padding: 24px 26px;">
+        <div class="image-placeholder" style="flex: 1; min-height: 0;">
+          <span class="placeholder-tag">流程画面</span>
+          <div class="placeholder-content">
+            <div class="placeholder-icon">流程</div>
+            <div class="placeholder-title">能承载整个三步故事的一张主场景</div>
+            <div class="placeholder-copy">一张统一主视觉，而非三张碎片。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <span class="page-num">04</span>
+  </section>
+
+  <section class="slide pad-center bg-soft has-grid">
+    <div class="corner-logo">
+      <img src="../../assets/leadvisor_platform_logo.png" alt="Leadvisor Platform logo">
+    </div>
+    <div class="tip-grid">
+      <div class="quote-card card-strong flex-col gap-24">
+        <div class="quote-mark">“</div>
+        <p class="quote-text">
+          最好的视频一页，只讲一个判断，一个主视觉，留给口播呼吸的空间。
+        </p>
+        <p class="quote-attribution">适合用于转折、原则或段落小结。</p>
+      </div>
+      <div class="image-placeholder card">
+        <span class="placeholder-tag">洞察画面</span>
+        <div class="placeholder-content">
+          <div class="placeholder-icon">洞察</div>
+          <div class="placeholder-title">与洞察相呼应的具体场景或物件</div>
+          <div class="placeholder-copy">克制地衬托金句，不与文字争夺注意力。</div>
+        </div>
+      </div>
+    </div>
+    <span class="page-num">05</span>
+  </section>
+
+  <section class="slide pad-slide bg-spotlight has-footer">
+    <div class="corner-logo">
+      <img src="../../assets/leadvisor_platform_logo.png" alt="Leadvisor Platform logo">
+    </div>
+    <div class="flex-col gap-20 logo-safe-zone" style="margin-bottom: 36px;">
+      <span class="eyebrow">排版原则</span>
+      <h2 class="t-display one-line">一页，一个主任务。</h2>
+    </div>
+    <div class="split-layout">
+      <div class="card-strong" style="padding: 44px 46px; display: flex; flex-direction: column; justify-content: center; gap: 26px;">
+        <ul class="tip-list">
+          <li>一页只保留一个主任务。</li>
+          <li>临近边界时增加页数，不压缩字号。</li>
+          <li>每页保留一个主视觉，维持节奏。</li>
+        </ul>
+      </div>
+      <div class="image-placeholder card">
+        <span class="placeholder-tag">版式画面</span>
+        <div class="placeholder-content">
+          <div class="placeholder-icon">版式</div>
+          <div class="placeholder-title">干净克制的编辑式排版或工作场景</div>
+          <div class="placeholder-copy">呼应清晰结构与节奏感。</div>
+        </div>
+      </div>
+    </div>
+    <span class="page-num">06</span>
+  </section>
+
+  <section class="slide pad-slide bg-spotlight has-footer">
+    <div class="corner-logo">
+      <img src="../../assets/leadvisor_platform_logo.png" alt="Leadvisor Platform logo">
+    </div>
+    <div class="cta-shell">
+      <div class="cta-panel card-strong">
+        <div class="flex-col gap-24">
+          <span class="eyebrow">结尾</span>
+          <h2 class="t-title one-line">由 <span class="text-accent">Leadvisor Global</span> 制作</h2>
+          <p class="t-body">内容整理自 <span class="text-ink">&lt;文章来源机构&gt;</span>。</p>
+        </div>
+        <div class="flex-col gap-16">
+          <p class="outro-contact-line"><span class="text-ink">https://www.leadvisor.net</span></p>
+          <p class="outro-disclaimer">内容仅供教育参考，不构成法律意见。</p>
+        </div>
+      </div>
+      <div class="image-placeholder card">
+        <span class="placeholder-tag">尾页画面</span>
+        <div class="placeholder-content">
+          <div class="placeholder-icon">收束</div>
+          <div class="placeholder-title">沉静克制的编辑或工作室场景</div>
+          <div class="placeholder-copy">用一张建立信任感的画面，让来源声明保持专业。</div>
+        </div>
+      </div>
+    </div>
+    <span class="page-num">07</span>
+  </section>
+</body>
+</html>
