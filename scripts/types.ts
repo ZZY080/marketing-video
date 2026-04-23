@@ -9,6 +9,7 @@ export interface Segment {
 export interface TaskPaths {
   wipDir: string;
   outlinePath: string;
+  pptxPath: string;
   slidesHtmlPath: string;
   segmentsPath: string;
   imagesDir: string;

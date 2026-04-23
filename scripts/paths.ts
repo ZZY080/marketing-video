@@ -20,6 +20,7 @@ export function buildTaskPaths(taskId: string, outputPath?: string): TaskPaths {
   return {
     wipDir,
     outlinePath: path.join(wipDir, "outline.md"),
+    pptxPath: path.join(wipDir, "slides.pptx"),
     slidesHtmlPath: path.join(wipDir, "slides.html"),
     segmentsPath: path.join(wipDir, "segments.json"),
     imagesDir: path.join(wipDir, "images"),

@@ -5,12 +5,14 @@ import path from "node:path";
 import { initEnv } from "./env";
 import { generateImage, taskImagePath } from "./image";
 import { buildTaskPaths, MEDIA_ROOT } from "./paths";
+import { screenshotPpt } from "./ppt-screenshot";
+import { validateSlideFramesAgainstSegments } from "./frame-validate";
 import { renderSegmentsAndConcat } from "./render";
+import { importStoryboardToSegments } from "./script-import";
 import { writeSrtFiles } from "./srt";
 import { synthesizeSegments } from "./tts";
 import type { Segment } from "./types";
 import { checkBinary, ensureDir, fail, logInfo } from "./utils";
-import { validateSlidesHtml } from "./validate";
 
 initEnv();
 
@@ -38,46 +40,50 @@ program
   });
 
 program
-  .command("screenshot")
-  .description(
-    "补图并写回 slides.html → slides/slide-*.png；成片前请人工检查 PNG（见 AGENTS.md Visual QA）",
-  )
+  .command("ppt-screenshot")
+  .description("将 slides.pptx 自动导出为 slides/slide-001.png ...")
   .requiredOption("--task-id <id>", "Task ID")
-  .action(async (opts: { taskId: string }) => {
+  .option("--pptx-path <path>", "覆盖默认 PPT 路径（默认 wip/<task-id>/slides.pptx）")
+  .action(async (opts: { taskId: string; pptxPath?: string }) => {
     try {
       const paths = buildTaskPaths(opts.taskId);
       await ensureDir(paths.slidesDir);
-      await validateSlidesHtml(paths.slidesHtmlPath, {
-        allowUnresolvedImagePlaceholders: true,
-        allowPlaceholderTokens: true,
-      });
-      const { screenshotSlides } = await import("./screenshot");
-      const result = await screenshotSlides(
-        paths.slidesHtmlPath,
-        paths.slidesDir,
-      );
-      logInfo(`Captured ${String(result.count)} slide screenshots.`);
+      const pptxPath = opts.pptxPath?.trim()
+        ? path.resolve(opts.pptxPath.trim())
+        : paths.pptxPath;
+      const result = await screenshotPpt({ pptxPath, outputDir: paths.slidesDir });
+      logInfo(`已导出 ${String(result.count)} 张 PPT 幻灯片。`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`[Error] screenshot failed: ${message}`);
+      console.error(`[错误] ppt-screenshot 失败: ${message}`);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("screenshot")
+  .description("已弃用：HTML 截图流程已移除，请改用 ppt-screenshot")
+  .requiredOption("--task-id <id>", "Task ID")
+  .action(async () => {
+    try {
+      fail("命令 screenshot 已弃用。请执行：npm run video -- ppt-screenshot --task-id <id>");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[错误] screenshot 已弃用: ${message}`);
       process.exitCode = 1;
     }
   });
 
 program
   .command("validate")
-  .description(
-    "对 slides.html 做终检，阻止模板残留、过程文案和未替换占位块进入成片",
-  )
+  .description("已弃用：HTML 校验流程已移除")
   .requiredOption("--task-id <id>", "Task ID")
-  .action(async (opts: { taskId: string }) => {
+  .action(async () => {
     try {
-      const paths = buildTaskPaths(opts.taskId);
-      await validateSlidesHtml(paths.slidesHtmlPath);
-      logInfo("slides.html 终检通过。");
+      fail("命令 validate 已弃用。PPT-only 流程请使用：ppt-screenshot -> tts -> srt -> render");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`[错误] validate 失败: ${message}`);
+      console.error(`[错误] validate 已弃用: ${message}`);
       process.exitCode = 1;
     }
   });
@@ -138,6 +144,39 @@ program
       }
     },
   );
+
+program
+  .command("script-import")
+  .description("将 scene/shot 脚本 JSON 转换为 segments.json")
+  .requiredOption("--task-id <id>", "任务 ID")
+  .option(
+    "--script-path <path>",
+    "脚本 JSON 路径（默认 wip/<task-id>/script.json）",
+  )
+  .action(async (opts: { taskId: string; scriptPath?: string }) => {
+    try {
+      const paths = buildTaskPaths(opts.taskId);
+      await ensureDir(paths.wipDir);
+      const scriptPath = opts.scriptPath?.trim()
+        ? path.resolve(opts.scriptPath.trim())
+        : path.join(paths.wipDir, "script.json");
+      const shotMapPath = path.join(paths.wipDir, "shot-map.json");
+      const result = await importStoryboardToSegments({
+        scriptPath,
+        segmentsPath: paths.segmentsPath,
+        shotMapPath,
+      });
+      logInfo(
+        `脚本导入完成：segments=${String(result.segmentCount)}，跳过无旁白镜头=${String(result.skippedSilentShots)}`,
+      );
+      logInfo(`已写入：${result.segmentsPath}`);
+      logInfo(`镜头映射：${result.shotMapPath}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[错误] script-import 失败: ${message}`);
+      process.exitCode = 1;
+    }
+  });
 
 program
   .command("tts")
@@ -207,6 +246,7 @@ program
       if (segments.length === 0) {
         fail("segments.json 无分段。");
       }
+      await validateSlideFramesAgainstSegments(paths.slidesDir, segments);
       const missingAudio = segments.some(
         (s) => !s.audioPath || !s.durationSeconds,
       );

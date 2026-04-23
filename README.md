@@ -1,11 +1,11 @@
 # MarketingVideo
 
-Standalone CLI tool for creating commercial-ready teaching/marketing videos from structured slide content.
+Standalone CLI tool for creating commercial-ready teaching/marketing videos from PPT slides and structured narration.
 
 Pipeline:
 
-- HTML slides (`slides.html`)
-- Auto screenshot to PNG
+- PPT slides (`slides.pptx`)
+- Auto export to PNG frames
 - TTS narration per slide
 - SRT subtitle generation
 - MP4 rendering and concatenation
@@ -18,10 +18,12 @@ Pipeline:
 npm install
 ```
 
-### 2. Install Playwright browser runtime (first run only)
+### 2. Install PPT export and rendering dependencies
 
 ```bash
-npx playwright install chromium
+brew install --cask libreoffice
+brew install poppler
+brew install ffmpeg
 ```
 
 ### 3. Configure env
@@ -32,8 +34,8 @@ cp .env.example .env
 
 Fill at least:
 
-- `GEMINI_API_KEY`
 - `MINIMAX_API_KEY`
+- `GEMINI_API_KEY` (optional, only for `image` command)
 
 ### 4. Initialize media folders
 
@@ -47,11 +49,11 @@ npm run init
 # Generate one image asset
 npm run video -- image --task-id demo --prompt "your prompt" --filename cover.jpg
 
-# Validate slides HTML
-npm run video -- validate --task-id demo
+# Export PPT to slide frames
+npm run video -- ppt-screenshot --task-id demo
 
-# Screenshot all slides (with auto-placeholder image fill)
-npm run video -- screenshot --task-id demo
+# Import scene/shot script JSON to segments
+npm run video -- script-import --task-id demo --script-path /absolute/path/script.json
 
 # TTS
 npm run video -- tts --task-id demo --voice English_Explanatory_Man --tts-speed 1.0
@@ -85,6 +87,7 @@ Final output:
 
 ## Notes
 
-- The default template assumes 1920x1080 production.
-- `validate` enforces first/last slide structural constraints.
-- If generated visuals contain readable text, regenerate them before render.
+- Prepare `media/wip/<task-id>/slides.pptx` before running `ppt-screenshot`.
+- If you use storyboard JSON format, run `script-import` first to generate `segments.json`.
+- `render` validates slide frame continuity and segment mapping.
+- Commands `screenshot` and `validate` are deprecated in PPT-only workflow.

@@ -1,7 +1,7 @@
 {
   "name": "marketing-video",
   "version": "1.0.0",
-  "description": "Standalone marketing video pipeline: HTML slides -> screenshots -> TTS -> subtitles -> MP4.",
+  "description": "Standalone marketing video pipeline: PPT slides -> frames -> TTS -> subtitles -> MP4.",
   "type": "commonjs",
   "main": "scripts/cli.ts",
   "scripts": {

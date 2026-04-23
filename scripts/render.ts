@@ -176,14 +176,22 @@ function buildSubtitleFilter(
 ): string {
   const language = detectNarrationLanguage(narration);
   const fontName = language === "zh" ? fonts.zh : fonts.en;
-  const fontSize = language === "zh" ? 22 : 21;
+  const fontSize = language === "zh" ? 16 : 16;
   const forceStyle = [
     `FontName=${fontName}`,
     `FontSize=${String(fontSize)}`,
-    "Outline=2",
+    "Bold=0",
+    "PrimaryColour=&H00FFFFFF",
+    "OutlineColour=&H5A000000",
+    "BackColour=&H64000000",
+    "BorderStyle=1",
+    "Outline=1",
     "Shadow=0",
+    "Spacing=0",
+    "MarginL=96",
+    "MarginR=96",
     "Alignment=2",
-    "MarginV=30",
+    "MarginV=14",
   ].join(",");
   return `subtitles='${normalizeForFilter(segmentSrtPath)}':force_style='${forceStyle}'`;
 }
