@@ -9,15 +9,18 @@ import { Segment } from "./types";
 import { formatIndex, toSrtTimestamp } from "./utils";
 
 // 同步优先：按语义句切分，避免“按固定字数硬切”导致口播与字幕错位。
-const MAX_CJK_LINE_LENGTH = 24;
-const MAX_LATIN_LINE_LENGTH = 56;
-const MAX_LATIN_LINE_WORDS = 12;
+const MAX_CJK_LINE_LENGTH = 20;
+const MAX_LATIN_LINE_LENGTH = 44;
+const MAX_LATIN_LINE_WORDS = 9;
 const MIN_CUE_SECONDS = 1.2;
 const MAX_CUE_SECONDS = 6.0;
+
+export type SubtitleMode = "semantic" | "strict-single";
 
 export async function writeSrtFiles(
   segments: Segment[],
   subtitlesDir: string,
+  options?: { subtitleMode?: SubtitleMode },
 ): Promise<{ allSrtPath: string; segmentSrtPaths: string[] }> {
   const allSrtPath = path.join(subtitlesDir, "all.srt");
   const allEntries: string[] = [];
@@ -28,9 +31,16 @@ export async function writeSrtFiles(
   for (const segment of segments) {
     const duration = Math.max(segment.durationSeconds ?? 0, 0.3);
     const start = current;
-    const end = current + duration;
-    const subtitleLines = splitNarrationToSubtitleLines(segment.narration);
-    const timedLines = allocateTimings(subtitleLines, start, end);
+    const segmentTimedCues = resolveSegmentCueTimings(
+      segment,
+      duration,
+      options?.subtitleMode ?? "semantic",
+    );
+    const timedLines = segmentTimedCues.map((item) => ({
+      text: item.text,
+      start: start + item.start,
+      end: start + item.end,
+    }));
 
     for (const item of timedLines) {
       allEntries.push(
@@ -43,7 +53,7 @@ export async function writeSrtFiles(
       subtitlesDir,
       `segment-${formatIndex(segment.index)}.srt`,
     );
-    const segmentEntries = allocateTimings(subtitleLines, 0, duration)
+    const segmentEntries = segmentTimedCues
       .map(
         (item, idx) =>
           `${idx + 1}\n${toSrtTimestamp(item.start)} --> ${toSrtTimestamp(item.end)}\n${item.text}\n`,
@@ -51,7 +61,7 @@ export async function writeSrtFiles(
       .join("\n");
     await writeFile(segmentSrtPath, `${segmentEntries.trim()}\n`, "utf-8");
     segmentSrtPaths.push(segmentSrtPath);
-    current = end;
+    current += duration;
   }
 
   await writeFile(allSrtPath, `${allEntries.join("\n").trim()}\n`, "utf-8");
@@ -59,6 +69,121 @@ export async function writeSrtFiles(
     allSrtPath,
     segmentSrtPaths,
   };
+}
+
+function resolveSegmentCueTimings(
+  segment: Segment,
+  duration: number,
+  subtitleMode: SubtitleMode,
+): Array<{ text: string; start: number; end: number }> {
+  if (subtitleMode === "strict-single") {
+    const singleLine = sanitizeNarrationToSingleLine(segment.narration);
+    return singleLine ? [{ text: singleLine, start: 0, end: duration }] : [];
+  }
+  const fromTts = mapTtsSubtitleCues(segment, duration);
+  if (fromTts.length > 0) {
+    return fromTts;
+  }
+
+  const subtitleLines = splitNarrationToSubtitleLines(segment.narration);
+  return allocateTimings(subtitleLines, 0, duration);
+}
+
+function sanitizeNarrationToSingleLine(narration: string): string {
+  const normalized = normalizeNarrationWhitespace(sanitizeSubtitleText(narration)).trim();
+  if (!normalized) {
+    return "";
+  }
+  const language = detectNarrationLanguage(normalized);
+  if (language === "zh") {
+    return normalized.replace(/\s+/gu, "");
+  }
+  return normalized.replace(/\s+/gu, " ");
+}
+
+function mapTtsSubtitleCues(
+  segment: Segment,
+  duration: number,
+): Array<{ text: string; start: number; end: number }> {
+  const cues = (segment.subtitleCues ?? [])
+    .filter((item) =>
+      Number.isFinite(item.startSeconds)
+      && Number.isFinite(item.endSeconds)
+      && item.endSeconds > item.startSeconds,
+    )
+    .sort((a, b) => a.startSeconds - b.startSeconds);
+  if (cues.length === 0) {
+    return [];
+  }
+
+  const firstStart = cues[0]?.startSeconds ?? 0;
+  const lastEnd = cues[cues.length - 1]?.endSeconds ?? firstStart;
+  const sourceSpan = Math.max(0.001, lastEnd - firstStart);
+
+  const normalized = cues
+    .flatMap((cue) => {
+      const lines = splitCueToSingleLines(cue.text);
+      if (lines.length === 0) {
+        return null;
+      }
+      const normalizedStart = ((cue.startSeconds - firstStart) / sourceSpan) * duration;
+      const normalizedEnd = ((cue.endSeconds - firstStart) / sourceSpan) * duration;
+      const cueStart = clamp(normalizedStart, 0, duration);
+      const cueEnd = clamp(normalizedEnd, cueStart, duration);
+      if (cueEnd - cueStart < 0.05) {
+        return [];
+      }
+      return allocateTimings(lines, cueStart, cueEnd);
+    })
+    .filter((item): item is { text: string; start: number; end: number } => item !== null);
+
+  if (normalized.length === 0) {
+    return [];
+  }
+
+  const stitched: Array<{ text: string; start: number; end: number }> = [];
+  let cursor = 0;
+  for (let i = 0; i < normalized.length; i += 1) {
+    const item = normalized[i];
+    const isLast = i === normalized.length - 1;
+    const gap = item.start - cursor;
+    const start = clamp(
+      Math.max(cursor, gap <= 0.24 ? cursor : item.start),
+      0,
+      duration,
+    );
+    let end = clamp(item.end, start + 0.05, duration);
+    if (isLast) {
+      end = duration;
+    } else if (end <= start) {
+      end = clamp(start + 0.05, 0, duration);
+    }
+    if (end <= start) {
+      continue;
+    }
+    stitched.push({ text: item.text, start, end });
+    cursor = end;
+  }
+
+  return stitched;
+}
+
+function splitCueToSingleLines(text: string): string[] {
+  const normalized = normalizeNarrationWhitespace(sanitizeSubtitleText(text)).trim();
+  if (!normalized) {
+    return [];
+  }
+  const language = detectNarrationLanguage(normalized);
+  const lines = language === "zh"
+    ? wrapChineseSentence(normalized)
+    : wrapLatinSentence(normalized);
+  const sanitized = lines
+    .map((line) => normalizeNarrationWhitespace(sanitizeSubtitleText(line)).trim())
+    .filter(Boolean);
+  if (sanitized.length > 0) {
+    return sanitized;
+  }
+  return [normalized];
 }
 
 function splitNarrationToSubtitleLines(narration: string): string[] {
@@ -76,13 +201,13 @@ function splitNarrationToSubtitleLines(narration: string): string[] {
   );
 
   const sanitizedLines = lines
-    .map((line) => normalizeNarrationWhitespace(stripSubtitlePunctuation(line)).trim())
+    .map((line) => normalizeNarrationWhitespace(sanitizeSubtitleText(line)).trim())
     .filter(Boolean);
   if (sanitizedLines.length > 0) {
     return sanitizedLines;
   }
   const sanitizedNarration = normalizeNarrationWhitespace(
-    stripSubtitlePunctuation(normalized),
+    sanitizeSubtitleText(normalized),
   ).trim();
   return sanitizedNarration ? [sanitizedNarration] : [normalized];
 }
@@ -260,6 +385,8 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function stripSubtitlePunctuation(text: string): string {
-  return text.replace(/\p{P}+/gu, "");
+function sanitizeSubtitleText(text: string): string {
+  // Remove control chars + all punctuation to satisfy short-video subtitle style.
+  const noControlChars = text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
+  return noControlChars.replace(/\p{P}+/gu, " ");
 }

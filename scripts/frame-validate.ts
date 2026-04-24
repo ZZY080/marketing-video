@@ -61,6 +61,7 @@ export async function validateSlideFramesAgainstSegments(
     );
   }
 
+  const slideRefCount = new Map<number, number>();
   for (const segment of segments) {
     if (!Number.isInteger(segment.slideIndex) || segment.slideIndex <= 0) {
       fail(`第 ${String(segment.index)} 段 slideIndex 非法：${String(segment.slideIndex)}。`);
@@ -71,6 +72,20 @@ export async function validateSlideFramesAgainstSegments(
       fail(
         `第 ${String(segment.index)} 段引用了不存在的 slideIndex=${String(segment.slideIndex)}（期望文件前缀 ${expectedName}）。`,
       );
+    }
+    slideRefCount.set(
+      segment.slideIndex,
+      (slideRefCount.get(segment.slideIndex) ?? 0) + 1,
+    );
+  }
+
+  for (let i = 1; i <= slides.length; i += 1) {
+    const count = slideRefCount.get(i) ?? 0;
+    if (count === 0) {
+      fail(`第 ${pad3(i)} 页幻灯片缺少对应解说分段（slideIndex=${String(i)}）。`);
+    }
+    if (count > 1) {
+      fail(`第 ${pad3(i)} 页幻灯片被重复引用了 ${String(count)} 次（slideIndex=${String(i)}）。`);
     }
   }
 

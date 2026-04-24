@@ -9,6 +9,7 @@ import { screenshotPpt } from "./ppt-screenshot";
 import { validateSlideFramesAgainstSegments } from "./frame-validate";
 import { renderSegmentsAndConcat } from "./render";
 import { importStoryboardToSegments } from "./script-import";
+import { runQualityChecks } from "./qa";
 import { writeSrtFiles } from "./srt";
 import { synthesizeSegments } from "./tts";
 import type { Segment } from "./types";
@@ -153,7 +154,8 @@ program
     "--script-path <path>",
     "脚本 JSON 路径（默认 wip/<task-id>/script.json）",
   )
-  .action(async (opts: { taskId: string; scriptPath?: string }) => {
+  .option("--timeline-mode <mode>", "tts | script（script 按 shot.duration_sec 作为目标时长）", "tts")
+  .action(async (opts: { taskId: string; scriptPath?: string; timelineMode: string }) => {
     try {
       const paths = buildTaskPaths(opts.taskId);
       await ensureDir(paths.wipDir);
@@ -165,6 +167,7 @@ program
         scriptPath,
         segmentsPath: paths.segmentsPath,
         shotMapPath,
+        timelineMode: parseTimelineMode(opts.timelineMode),
       });
       logInfo(
         `脚本导入完成：segments=${String(result.segmentCount)}，跳过无旁白镜头=${String(result.skippedSilentShots)}`,
@@ -207,7 +210,8 @@ program
   .command("srt")
   .description("根据 segments 生成字幕文件")
   .requiredOption("--task-id <id>", "任务 ID")
-  .action(async (opts: { taskId: string }) => {
+  .option("--subtitle-mode <mode>", "semantic | strict-single", "semantic")
+  .action(async (opts: { taskId: string; subtitleMode: string }) => {
     try {
       const paths = buildTaskPaths(opts.taskId);
       await ensureDir(paths.subtitlesDir);
@@ -217,11 +221,42 @@ program
       if (segments.length === 0) {
         fail("segments.json 无分段。");
       }
-      const { allSrtPath } = await writeSrtFiles(segments, paths.subtitlesDir);
+      const { allSrtPath } = await writeSrtFiles(segments, paths.subtitlesDir, {
+        subtitleMode: parseSubtitleMode(opts.subtitleMode),
+      });
       logInfo(`字幕已写入：${allSrtPath}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[错误] srt 失败: ${message}`);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("qa")
+  .description("渲染前质量检查：字幕单行、无标点、时长偏差")
+  .requiredOption("--task-id <id>", "任务 ID")
+  .option("--max-duration-drift-ratio <n>", "允许的时长偏差比例，默认 0.03", "0.03")
+  .action(async (opts: { taskId: string; maxDurationDriftRatio: string }) => {
+    try {
+      const paths = buildTaskPaths(opts.taskId);
+      const raw = await readFile(paths.segmentsPath, "utf-8");
+      const data = JSON.parse(raw) as { segments?: Segment[] };
+      const segments = Array.isArray(data.segments) ? data.segments : [];
+      if (segments.length === 0) {
+        fail("segments.json 无分段。");
+      }
+      await runQualityChecks({
+        subtitlesDir: paths.subtitlesDir,
+        segments,
+        options: {
+          maxDurationDriftRatio: parseDriftRatio(opts.maxDurationDriftRatio),
+        },
+      });
+      logInfo("QA 通过：字幕单行/无标点/时长偏差满足阈值。");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[错误] qa 失败: ${message}`);
       process.exitCode = 1;
     }
   });
@@ -273,6 +308,28 @@ function parseTtsSpeed(raw: string): number {
   const n = Number.parseFloat(raw.trim());
   if (!Number.isFinite(n) || n < 0.5 || n > 2.0) {
     fail(`无效的 --tts-speed：${raw}（MiniMax 支持 0.5–2.0）`);
+  }
+  return n;
+}
+
+function parseTimelineMode(raw: string): "tts" | "script" {
+  if (raw === "tts" || raw === "script") {
+    return raw;
+  }
+  fail(`无效的 --timeline-mode：${raw}（仅支持 tts 或 script）`);
+}
+
+function parseSubtitleMode(raw: string): "semantic" | "strict-single" {
+  if (raw === "semantic" || raw === "strict-single") {
+    return raw;
+  }
+  fail(`无效的 --subtitle-mode：${raw}（仅支持 semantic 或 strict-single）`);
+}
+
+function parseDriftRatio(raw: string): number {
+  const n = Number.parseFloat(raw.trim());
+  if (!Number.isFinite(n) || n < 0 || n > 1) {
+    fail(`无效的 --max-duration-drift-ratio：${raw}`);
   }
   return n;
 }

@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { Segment } from "./types";
-import { execCommand, fail, formatIndex, logInfo } from "./utils";
+import { Segment, SubtitleCue } from "./types";
+import { execCommand, fail, formatIndex, logInfo, logWarn } from "./utils";
 
 /** 标准自然语速 */
 const DEFAULT_TTS_SPEED = 1.0;
@@ -15,11 +15,18 @@ interface MiniMaxResponse {
   data?: {
     audio?: string;
     status?: number;
+    subtitle_file?: string;
   } | null;
   base_resp?: {
     status_code?: number;
     status_msg?: string;
   } | null;
+}
+
+interface MiniMaxSubtitleItem {
+  text?: string;
+  time_begin?: number;
+  time_end?: number;
 }
 
 export interface SynthesizeOptions {
@@ -53,19 +60,23 @@ export async function synthesizeSegments(
   logInfo(`TTS voice: ${voiceId}`);
 
   for (const segment of segments) {
+    const narration = segment.narration.trim();
+    if (!narration) {
+      fail(`第 ${String(segment.index)} 段 narration 为空，无法生成音频。`);
+    }
     const indexText = formatIndex(segment.index);
     const outputPath = path.join(audioDir, `segment-${indexText}.mp3`);
     logInfo(`正在生成第 ${String(segment.index)} 段音频...`);
 
-    const bytes = await requestMiniMaxTts({
+    const { audioBytes, subtitleCues } = await requestMiniMaxTts({
       endpoint,
       apiKey,
       model,
       voiceId,
       speed,
-      text: segment.narration,
+      text: narration,
     });
-    await writeFile(outputPath, bytes);
+    await writeFile(outputPath, audioBytes);
     const durationSeconds = await probeDuration(outputPath);
     if (durationSeconds <= 0) {
       fail(`第 ${String(segment.index)} 段音频时长异常。`);
@@ -75,6 +86,7 @@ export async function synthesizeSegments(
       ...segment,
       audioPath: outputPath,
       durationSeconds,
+      subtitleCues,
     });
   }
 
@@ -113,7 +125,7 @@ async function requestMiniMaxTts(input: {
   voiceId: string;
   speed: number;
   text: string;
-}): Promise<Buffer> {
+}): Promise<{ audioBytes: Buffer; subtitleCues: SubtitleCue[] }> {
   const response = await fetch(input.endpoint, {
     method: "POST",
     headers: {
@@ -137,7 +149,7 @@ async function requestMiniMaxTts(input: {
         format: "mp3",
         channel: 1,
       },
-      subtitle_enable: false,
+      subtitle_enable: true,
       output_format: "hex",
     }),
   });
@@ -163,9 +175,52 @@ async function requestMiniMaxTts(input: {
   }
 
   try {
-    return Buffer.from(audioHex, "hex");
+    const audioBytes = Buffer.from(audioHex, "hex");
+    const subtitleCues = await fetchMiniMaxSubtitleCues(
+      json.data?.subtitle_file,
+    );
+    return { audioBytes, subtitleCues };
   } catch (error) {
     fail(`MiniMax TTS 音频解码失败：${(error as Error).message}`);
+  }
+}
+
+async function fetchMiniMaxSubtitleCues(
+  subtitleFileUrl: string | undefined,
+): Promise<SubtitleCue[]> {
+  if (!subtitleFileUrl) {
+    return [];
+  }
+  try {
+    const response = await fetch(subtitleFileUrl);
+    if (!response.ok) {
+      logWarn(`下载 TTS 字幕时间戳失败：HTTP ${String(response.status)}。`);
+      return [];
+    }
+    const json = (await response.json()) as unknown;
+    if (!Array.isArray(json)) {
+      return [];
+    }
+    const cues = (json as MiniMaxSubtitleItem[])
+      .map((item) => {
+        const text = String(item.text ?? "").trim();
+        const begin = Number(item.time_begin);
+        const end = Number(item.time_end);
+        if (!text || !Number.isFinite(begin) || !Number.isFinite(end) || end <= begin) {
+          return null;
+        }
+        return {
+          text,
+          startSeconds: begin / 1000,
+          endSeconds: end / 1000,
+        } satisfies SubtitleCue;
+      })
+      .filter((item): item is SubtitleCue => item !== null)
+      .sort((a, b) => a.startSeconds - b.startSeconds);
+    return cues;
+  } catch (error) {
+    logWarn(`解析 TTS 字幕时间戳失败：${(error as Error).message}`);
+    return [];
   }
 }
 

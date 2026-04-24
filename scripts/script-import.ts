@@ -38,6 +38,7 @@ export async function importStoryboardToSegments(input: {
   scriptPath: string;
   segmentsPath: string;
   shotMapPath: string;
+  timelineMode: "tts" | "script";
 }): Promise<ImportStoryboardResult> {
   const raw = await readFile(input.scriptPath, "utf-8");
   const parsed = JSON.parse(raw) as StoryboardInput;
@@ -64,6 +65,9 @@ export async function importStoryboardToSegments(input: {
         index,
         slideIndex: index,
         narration: voiceover,
+        targetDurationSeconds: input.timelineMode === "script"
+          ? normalizeDuration(shot.duration_sec)
+          : undefined,
       });
       shotMap.push({
         segmentIndex: index,
@@ -102,6 +106,13 @@ export async function importStoryboardToSegments(input: {
 function toNumberOrNull(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return null;
+  }
+  return value;
+}
+
+function normalizeDuration(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
   }
   return value;
 }
