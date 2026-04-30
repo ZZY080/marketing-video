@@ -80,6 +80,7 @@ function resolveSegmentCueTimings(
     const singleLine = sanitizeNarrationToSingleLine(segment.narration);
     return singleLine ? [{ text: singleLine, start: 0, end: duration }] : [];
   }
+  // 同步优先：只要有 TTS 时间戳就优先使用，确保口播与字幕时间对齐。
   const fromTts = mapTtsSubtitleCues(segment, duration);
   if (fromTts.length > 0) {
     return fromTts;
@@ -386,18 +387,26 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function sanitizeSubtitleText(text: string): string {
-  // 短视频字幕标点策略：
-  // - 句号（。/.）默认移除，让画面更干净
-  // - 保留逗号、问号、感叹号、省略号，维持断句和语气
-  // - 其余标点按需清理
-  const noControlChars = text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
-  const normalizedEllipsis = noControlChars
+  const widthNormalized = text.normalize("NFKC");
+  const noControlChars = widthNormalized
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, " ")
+    .replace(/[�□■▢▣▤▥▦▧▨▩◻◼◽◾]/gu, " ");
+  const normalizedPunctuation = noControlChars
+    .replace(/[，、]/gu, ",")
+    .replace(/[。]/gu, ".")
+    .replace(/[！]/gu, "!")
+    .replace(/[？]/gu, "?")
+    .replace(/[；]/gu, ";")
+    .replace(/[：]/gu, ":")
+    .replace(/[“”]/gu, "\"")
+    .replace(/[‘’]/gu, "'")
+    .replace(/[‐‑‒–—―]/gu, "-")
     .replace(/\.{3,}/g, "…")
-    .replace(/。{2,}/gu, "…")
     .replace(/…{2,}/gu, "…");
-  const withoutPeriods = normalizedEllipsis
-    .replace(/[。\.]+/gu, "")
-    .replace(/[、；：;:]/gu, "，");
-  const keepCorePunctuation = withoutPeriods.replace(/[^\p{L}\p{N}\p{Script=Han}\s，,！？?!…]/gu, " ");
+  const fixedBoundaries = normalizedPunctuation
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/([,.!?;:])([A-Za-z0-9])/g, "$1 $2");
+  const keepCorePunctuation = fixedBoundaries.replace(/[^\p{L}\p{N}\p{Script=Han}\s,.!?;:'"()\-…]/gu, " ");
   return keepCorePunctuation.replace(/\s+/gu, " ").trim();
 }

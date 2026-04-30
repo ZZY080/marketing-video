@@ -164,6 +164,14 @@ Generates:
 - `subtitles/all.srt`
 - `subtitles/segment-NNN.srt`
 
+Subtitle policy (mandatory):
+
+- Default mode must be `semantic` (normal subtitle switching), not full-page static subtitle.
+- `strict-single` is only allowed when explicitly requested by the user.
+- Subtitles must stay page-bound: each `segment-NNN.srt` may only contain text from slide `NNN` narration.
+- Sync priority: use TTS timestamps when available to keep voice and subtitle timing aligned.
+- English subtitles must preserve readable spacing between words; remove garbled replacement glyphs (for example `�` or square boxes).
+
 ### Step 7 - Render
 
 ```bash
@@ -218,4 +226,22 @@ A task is complete only when:
 - [ ] Visual QA passed for every frame.
 - [ ] `tts` filled `audioPath` + `durationSeconds` for all segments.
 - [ ] `subtitles/all.srt` exists.
+- [ ] Subtitle style is normal switching (not static full-page subtitle), unless user explicitly requested static subtitle.
+- [ ] Subtitle text is page-related (no cross-page carryover).
+- [ ] Spot-check subtitle timing against audio on at least 2 slides (start/mid) before final delivery.
 - [ ] `render` produced playable MP4 with burned subtitles.
+
+---
+
+## 6) Reusable Execution Prompt (Copy/Paste)
+
+Use this prompt for future runs to avoid the same subtitle issues:
+
+```text
+基于给定 PPT 和逐页脚本生成视频。要求：
+1) 字幕使用正常切换样式（semantic），不要整页常驻字幕；
+2) 每页字幕内容只来自该页讲稿，不跨页；
+3) 语音与字幕时间必须同步（优先使用 TTS 时间戳）；
+4) 英文字幕单词之间必须有空格，清理乱码/方块字符；
+5) 渲染前抽查至少 2 页，确认字幕切换与语音对齐后再交付。
+```

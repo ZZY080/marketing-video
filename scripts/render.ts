@@ -179,7 +179,7 @@ function buildSubtitleFilter(
     ? "zh"
     : detectNarrationLanguage(narration);
   const fontName = language === "zh" ? fonts.zh : fonts.en;
-  const fontSize = language === "zh" ? 23 : 22;
+  const fontSize = language === "zh" ? 17 : 16;
   const forceStyle = [
     `FontName=${fontName}`,
     `FontSize=${String(fontSize)}`,
