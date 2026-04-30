@@ -2,6 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Segment, SubtitleCue } from "./types";
 import { execCommand, fail, formatIndex, logInfo, logWarn } from "./utils";
+import { detectNarrationLanguage } from "./language";
 
 /** 标准自然语速 */
 const DEFAULT_TTS_SPEED = 1.0;
@@ -10,6 +11,9 @@ const DEFAULT_MINIMAX_MODEL = "speech-2.8-hd";
 const DEFAULT_MINIMAX_ENDPOINT = "https://api.minimaxi.com/v1/t2a_v2";
 const DEFAULT_MINIMAX_VOICE_ID = "English_Explanatory_Man";
 const AUTO_VOICE = "auto";
+
+const MINIMAX_VOICE_ZH = "Chinese_calm_streamer_vv1";
+const MINIMAX_VOICE_EN = "English_Explanatory_Man";
 
 interface MiniMaxResponse {
   data?: {
@@ -34,6 +38,12 @@ export interface SynthesizeOptions {
   speed?: number;
 }
 
+function pickVoiceIdByLanguage(language: "zh" | "en"): string {
+  return language === "zh"
+    ? MINIMAX_VOICE_ZH
+    : MINIMAX_VOICE_EN;
+}
+
 export async function synthesizeSegments(
   segmentsPath: string,
   audioDir: string,
@@ -56,8 +66,10 @@ export async function synthesizeSegments(
   const speed = resolveTtsSpeed(options?.speed);
   const endpoint = DEFAULT_MINIMAX_ENDPOINT;
   const model = DEFAULT_MINIMAX_MODEL;
-  const voiceId = resolveMiniMaxVoiceId(voice, segments);
-  logInfo(`TTS voice: ${voiceId}`);
+  const fixedVoiceId = resolveMiniMaxVoiceId(voice, segments);
+  const isAutoVoice = voice.trim().toLowerCase() === AUTO_VOICE;
+  const modeText = isAutoVoice ? " (auto by dominant task language)" : "";
+  logInfo(`TTS voice: ${fixedVoiceId}${modeText}`);
 
   for (const segment of segments) {
     const narration = segment.narration.trim();
@@ -66,7 +78,10 @@ export async function synthesizeSegments(
     }
     const indexText = formatIndex(segment.index);
     const outputPath = path.join(audioDir, `segment-${indexText}.mp3`);
-    logInfo(`正在生成第 ${String(segment.index)} 段音频...`);
+    const voiceId = fixedVoiceId;
+    logInfo(
+      `正在生成第 ${String(segment.index)} 段音频（voice=${voiceId}）...`,
+    );
 
     const { audioBytes, subtitleCues } = await requestMiniMaxTts({
       endpoint,
@@ -112,10 +127,22 @@ function resolveTtsSpeed(override?: number): number {
 
 function resolveMiniMaxVoiceId(rawVoice: string, _segments: Segment[]): string {
   const voice = rawVoice.trim();
-  if (voice && voice.toLowerCase() !== AUTO_VOICE) {
+  if (!voice) {
+    return DEFAULT_MINIMAX_VOICE_ID;
+  }
+  if (voice.toLowerCase() !== AUTO_VOICE) {
     return voice;
   }
-  return DEFAULT_MINIMAX_VOICE_ID;
+  return resolveAutoVoiceId(_segments);
+}
+
+function resolveAutoVoiceId(segments: Segment[]): string {
+  const mergedNarration = segments
+    .map((segment) => segment.narration.trim())
+    .filter(Boolean)
+    .join("\n");
+  const language = detectNarrationLanguage(mergedNarration);
+  return pickVoiceIdByLanguage(language);
 }
 
 async function requestMiniMaxTts(input: {
@@ -206,7 +233,12 @@ async function fetchMiniMaxSubtitleCues(
         const text = String(item.text ?? "").trim();
         const begin = Number(item.time_begin);
         const end = Number(item.time_end);
-        if (!text || !Number.isFinite(begin) || !Number.isFinite(end) || end <= begin) {
+        if (
+          !text ||
+          !Number.isFinite(begin) ||
+          !Number.isFinite(end) ||
+          end <= begin
+        ) {
           return null;
         }
         return {

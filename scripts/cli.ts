@@ -187,8 +187,8 @@ program
   .requiredOption("--task-id <id>", "任务 ID")
   .option(
     "--voice <voice>",
-    "MiniMax voice_id；默认 English_Explanatory_Man",
-    "English_Explanatory_Man",
+    "MiniMax voice_id；默认 auto（按段落语言自动选音色）",
+    "auto",
   )
   .option("--tts-speed <n>", "0.5–2.0", "1.0")
   .action(async (opts: { taskId: string; voice: string; ttsSpeed: string }) => {
