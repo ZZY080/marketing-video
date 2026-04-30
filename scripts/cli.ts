@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { readFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { createInterface } from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
 import { initEnv } from "./env";
 import { generateImage, taskImagePath } from "./image";
 import { buildTaskPaths, MEDIA_ROOT } from "./paths";
@@ -13,7 +15,7 @@ import { runQualityChecks } from "./qa";
 import { writeSrtFiles } from "./srt";
 import { synthesizeSegments } from "./tts";
 import type { Segment } from "./types";
-import { checkBinary, ensureDir, fail, logInfo } from "./utils";
+import { checkBinary, ensureDir, execCommand, fail, logInfo, logWarn } from "./utils";
 
 initEnv();
 
@@ -45,14 +47,17 @@ program
   .description("将 slides.pptx 自动导出为 slides/slide-001.png ...")
   .requiredOption("--task-id <id>", "Task ID")
   .option("--pptx-path <path>", "覆盖默认 PPT 路径（默认 wip/<task-id>/slides.pptx）")
-  .action(async (opts: { taskId: string; pptxPath?: string }) => {
+  .option("--pdf-path <path>", "直接使用 PDF 输入（建议用 PowerPoint 导出的 PDF）")
+  .option("--strict-pdf", "强制使用 PDF 作为导出源（缺失则失败）", false)
+  .action(async (opts: { taskId: string; pptxPath?: string; pdfPath?: string; strictPdf?: boolean }) => {
     try {
       const paths = buildTaskPaths(opts.taskId);
       await ensureDir(paths.slidesDir);
-      const pptxPath = opts.pptxPath?.trim()
-        ? path.resolve(opts.pptxPath.trim())
-        : paths.pptxPath;
-      const result = await screenshotPpt({ pptxPath, outputDir: paths.slidesDir });
+      const inputPath = await resolvePptScreenshotInputPath(paths.pptxPath, opts, {
+        preferPowerPointPdf: true,
+        requirePdfSource: opts.strictPdf === true,
+      });
+      const result = await screenshotPpt({ pptxPath: inputPath, outputDir: paths.slidesDir });
       logInfo(`已导出 ${String(result.count)} 张 PPT 幻灯片。`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -60,6 +65,186 @@ program
       process.exitCode = 1;
     }
   });
+
+program
+  .command("run-interactive")
+  .description("交互式完整流程：逐步执行并在每步人工确认后继续")
+  .requiredOption("--task-id <id>", "任务 ID")
+  .option("--pptx-path <path>", "覆盖默认 PPT 路径（默认 wip/<task-id>/slides.pptx）")
+  .option("--pdf-path <path>", "直接使用 PDF 输入（建议用 PowerPoint 导出的 PDF）")
+  .option(
+    "--voice <voice>",
+    "MiniMax voice_id；默认 auto（按段落语言自动选音色）",
+    "auto",
+  )
+  .option("--tts-speed <n>", "0.5–2.0", "1.0")
+  .option("--subtitle-mode <mode>", "semantic | strict-single", "semantic")
+  .option("--max-duration-drift-ratio <n>", "允许的时长偏差比例，默认 0.03", "0.03")
+  .option(
+    "--approve-stage <stage>",
+    "非交互模式下人工确认当前阶段后继续：screenshot|narration|tts|subtitle|qa",
+  )
+  .option(
+    "--out <path>",
+    "输出视频路径（默认 <MEDIA_ROOT>/outbound/<task-id>.mp4）",
+  )
+  .action(
+    async (opts: {
+      taskId: string;
+      pptxPath?: string;
+      pdfPath?: string;
+      voice: string;
+      ttsSpeed: string;
+      subtitleMode: string;
+      maxDurationDriftRatio: string;
+      approveStage?: string;
+      out?: string;
+    }) => {
+      try {
+        const interactive = input.isTTY && output.isTTY;
+        const paths = buildTaskPaths(opts.taskId, opts.out?.trim());
+        await ensureDir(paths.wipDir);
+        await ensureDir(paths.slidesDir);
+        await ensureDir(paths.audioDir);
+        await ensureDir(paths.subtitlesDir);
+        await ensureDir(paths.clipsDir);
+
+        const slideSourcePath = await resolvePptScreenshotInputPath(paths.pptxPath, opts, {
+          preferPowerPointPdf: true,
+          requirePdfSource: true,
+        });
+        logInfo(`步骤 1/6：导出 PPT 帧（source=${slideSourcePath}）`);
+        const screenshotResult = await screenshotPpt({
+          pptxPath: slideSourcePath,
+          outputDir: paths.slidesDir,
+        });
+        logInfo(`已导出 ${String(screenshotResult.count)} 张图片，请先人工预审：`);
+        for (const filePath of screenshotResult.files) {
+          logInfo(`- ${filePath}`);
+        }
+        await askForApproval({
+          interactive,
+          taskId: opts.taskId,
+          stage: "screenshot",
+          approvedStage: opts.approveStage,
+          wipDir: paths.wipDir,
+          prompt: "截图预审是否满意？（输入 y 继续，n 中止）",
+          rejectTips: [
+          "请逐页检查标题/正文是否缺字或被截断。",
+          `优先复核截图目录：${paths.slidesDir}`,
+          `若有版式偏差，请在 PowerPoint 导出 PDF 后重试：${path.join(paths.wipDir, "slides.pdf")}`,
+          ],
+        });
+
+        logInfo("步骤 2/6：导出每页解读供人工预审");
+        const segmentsForNarrationReview = await readSegments(paths.segmentsPath);
+        const narrationReviewPath = await exportNarrationReviewFile({
+          wipDir: paths.wipDir,
+          slidesDir: paths.slidesDir,
+          segments: segmentsForNarrationReview,
+        });
+        logInfo(`每页解读审阅文件已写入：${narrationReviewPath}`);
+        await askForApproval({
+          interactive,
+          taskId: opts.taskId,
+          stage: "narration",
+          approvedStage: opts.approveStage,
+          wipDir: paths.wipDir,
+          prompt: "每页解读预审是否满意？（输入 y 继续，n 中止）",
+          rejectTips: [
+          `请逐页审阅解读文稿：${narrationReviewPath}`,
+          "重点检查每页讲解是否准确对应当前 PPT 页面。",
+          "如需修改，请更新 segments.json 后重新执行 run-interactive。",
+          ],
+        });
+
+        logInfo("步骤 3/6：生成 TTS 音频");
+        await synthesizeSegments(paths.segmentsPath, paths.audioDir, opts.voice, {
+          speed: parseTtsSpeed(opts.ttsSpeed),
+        });
+        await askForApproval({
+          interactive,
+          taskId: opts.taskId,
+          stage: "tts",
+          approvedStage: opts.approveStage,
+          wipDir: paths.wipDir,
+          prompt: "TTS 结果是否满意？（输入 y 继续，n 中止）",
+          rejectTips: [
+          `请抽听音频目录中的片段：${paths.audioDir}`,
+          "如需调整语速可重跑并修改 --tts-speed（范围 0.5-2.0）。",
+          "如需固定音色可重跑并传 --voice <voice_id>。",
+          ],
+        });
+
+        logInfo("步骤 4/6：生成字幕");
+        const segmentsForSrt = await readSegments(paths.segmentsPath);
+        const { allSrtPath } = await writeSrtFiles(segmentsForSrt, paths.subtitlesDir, {
+          subtitleMode: parseSubtitleMode(opts.subtitleMode),
+        });
+        logInfo(`字幕已写入：${allSrtPath}`);
+        await askForApproval({
+          interactive,
+          taskId: opts.taskId,
+          stage: "subtitle",
+          approvedStage: opts.approveStage,
+          wipDir: paths.wipDir,
+          prompt: "字幕结果是否满意？（输入 y 继续，n 中止）",
+          rejectTips: [
+          `请优先预审总字幕：${allSrtPath}`,
+          `逐段字幕目录：${paths.subtitlesDir}`,
+          "若字幕切换不理想，可重跑 srt 并调整 --subtitle-mode。",
+          ],
+        });
+
+        logInfo("步骤 5/6：自动 QA 检查");
+        const segmentsForQa = await readSegments(paths.segmentsPath);
+        await runQualityChecks({
+          subtitlesDir: paths.subtitlesDir,
+          segments: segmentsForQa,
+          options: {
+            maxDurationDriftRatio: parseDriftRatio(opts.maxDurationDriftRatio),
+          },
+        });
+        logInfo("QA 通过。");
+        await askForApproval({
+          interactive,
+          taskId: opts.taskId,
+          stage: "qa",
+          approvedStage: opts.approveStage,
+          wipDir: paths.wipDir,
+          prompt: "QA 通过，是否继续渲染成片？（输入 y 继续，n 中止）",
+          rejectTips: [
+          "建议先抽查至少 2 页（开头/中段）确认语音与字幕对齐。",
+          `如需人工复核，请查看字幕目录：${paths.subtitlesDir}`,
+          "确认无误后重新执行 run-interactive 并继续。",
+          ],
+        });
+
+        logInfo("步骤 6/6：渲染视频");
+        await checkBinary("ffmpeg");
+        await checkBinary("ffprobe");
+        const segmentsForRender = await readSegments(paths.segmentsPath);
+        await validateSlideFramesAgainstSegments(paths.slidesDir, segmentsForRender);
+        const missingAudio = segmentsForRender.some((s) => !s.audioPath || !s.durationSeconds);
+        if (missingAudio) {
+          fail("请先执行 tts，确保每段含 audioPath 与 durationSeconds。");
+        }
+        await renderSegmentsAndConcat({
+          segments: segmentsForRender,
+          slidesDir: paths.slidesDir,
+          subtitlesDir: paths.subtitlesDir,
+          clipsDir: paths.clipsDir,
+          concatPath: paths.concatPath,
+          outputPath: paths.outputPath,
+        });
+        logInfo(`交互式流程完成，成片：${paths.outputPath}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[错误] run-interactive 失败: ${message}`);
+        process.exitCode = 1;
+      }
+    },
+  );
 
 program
   .command("screenshot")
@@ -310,6 +495,171 @@ function parseTtsSpeed(raw: string): number {
     fail(`无效的 --tts-speed：${raw}（MiniMax 支持 0.5–2.0）`);
   }
   return n;
+}
+
+async function readSegments(segmentsPath: string): Promise<Segment[]> {
+  const raw = await readFile(segmentsPath, "utf-8");
+  const data = JSON.parse(raw) as { segments?: Segment[] };
+  const segments = Array.isArray(data.segments) ? data.segments : [];
+  if (segments.length === 0) {
+    fail("segments.json 无分段。");
+  }
+  return segments;
+}
+
+async function askForApproval(inputArgs: {
+  interactive: boolean;
+  taskId: string;
+  stage: "screenshot" | "narration" | "tts" | "subtitle" | "qa";
+  approvedStage?: string;
+  wipDir: string;
+  prompt: string;
+  rejectTips: string[];
+}): Promise<void> {
+  if (!inputArgs.interactive) {
+    if (inputArgs.approvedStage === inputArgs.stage) {
+      logInfo(`已通过 --approve-stage=${inputArgs.stage} 确认，继续执行。`);
+      return;
+    }
+    const approvalPath = path.join(inputArgs.wipDir, "PENDING_APPROVAL.md");
+    const body = [
+      "# Pending Manual Approval",
+      "",
+      `Stage: ${inputArgs.stage}`,
+      "",
+      "This run is in non-interactive mode, so manual confirmation is required.",
+      "",
+      "## What to review",
+      ...inputArgs.rejectTips.map((tip) => `- ${tip}`),
+      "",
+      "## Continue command",
+      `npm run video -- run-interactive --task-id ${inputArgs.taskId} --approve-stage ${inputArgs.stage}`,
+      "",
+    ].join("\n");
+    await writeFile(approvalPath, `${body}\n`, "utf-8");
+    fail(
+      `当前为非交互终端，已写入人工确认文件：${approvalPath}。确认后请用 --approve-stage ${inputArgs.stage} 继续。`,
+    );
+  }
+
+  const rl = createInterface({ input, output });
+  try {
+    const answer = (await rl.question(`${inputArgs.prompt}\n> `)).trim().toLowerCase();
+    if (answer !== "y" && answer !== "yes") {
+      for (const tip of inputArgs.rejectTips) {
+        logInfo(`建议：${tip}`);
+      }
+      fail("用户未确认通过，流程已中止。");
+    }
+  } finally {
+    rl.close();
+  }
+}
+
+async function resolvePptScreenshotInputPath(
+  defaultPptxPath: string,
+  opts: { pptxPath?: string; pdfPath?: string },
+  options?: {
+    preferPowerPointPdf?: boolean;
+    requirePdfSource?: boolean;
+  },
+): Promise<string> {
+  if (opts.pptxPath?.trim() && opts.pdfPath?.trim()) {
+    fail("`--pptx-path` 与 `--pdf-path` 不能同时传。");
+  }
+  let inputPath = opts.pdfPath?.trim()
+    ? path.resolve(opts.pdfPath.trim())
+    : opts.pptxPath?.trim()
+      ? path.resolve(opts.pptxPath.trim())
+      : defaultPptxPath;
+  if (!opts.pdfPath?.trim() && !opts.pptxPath?.trim()) {
+    const siblingPdfPath = path.join(path.dirname(defaultPptxPath), "slides.pdf");
+    const hasSiblingPdf = await stat(siblingPdfPath)
+      .then(() => true)
+      .catch(() => false);
+    if (hasSiblingPdf) {
+      inputPath = siblingPdfPath;
+      logInfo("检测到同目录 slides.pdf，已优先使用 PDF 导出以避免字体替换导致的丢字。");
+    } else if (options?.preferPowerPointPdf) {
+      const exported = await tryExportPdfWithPowerPoint(defaultPptxPath, siblingPdfPath);
+      if (exported) {
+        inputPath = siblingPdfPath;
+        logInfo("已通过 PowerPoint 自动导出 slides.pdf，并将其作为导出源。");
+      } else if (options.requirePdfSource) {
+        fail(
+          "未找到 slides.pdf，且自动调用 PowerPoint 导出失败。请手动在 PowerPoint 导出 slides.pdf 后重试。",
+        );
+      }
+    }
+  }
+  if (
+    options?.requirePdfSource &&
+    path.extname(inputPath).toLowerCase() !== ".pdf"
+  ) {
+    fail("当前流程要求使用 PDF 作为导出源，请传 --pdf-path 或先准备 slides.pdf。");
+  }
+  return inputPath;
+}
+
+async function tryExportPdfWithPowerPoint(
+  pptxPath: string,
+  outputPdfPath: string,
+): Promise<boolean> {
+  if (process.platform !== "darwin") {
+    return false;
+  }
+  const escapedPptx = escapeAppleScriptPath(pptxPath);
+  const escapedPdf = escapeAppleScriptPath(outputPdfPath);
+  const script = [
+    `set pptxFile to POSIX file "${escapedPptx}"`,
+    `set pdfFile to POSIX file "${escapedPdf}"`,
+    'tell application "Microsoft PowerPoint"',
+    "open pptxFile",
+    "save active presentation in pdfFile as save as PDF",
+    "close active presentation saving no",
+    "end tell",
+  ].join("\n");
+
+  try {
+    await execCommand("osascript", ["-e", script]);
+    await stat(outputPdfPath);
+    return true;
+  } catch (error) {
+    logWarn(`自动调用 PowerPoint 导出 PDF 失败：${String(error)}`);
+    return false;
+  }
+}
+
+function escapeAppleScriptPath(filePath: string): string {
+  return filePath.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+async function exportNarrationReviewFile(input: {
+  wipDir: string;
+  slidesDir: string;
+  segments: Segment[];
+}): Promise<string> {
+  const reviewDir = path.join(input.wipDir, "review");
+  await ensureDir(reviewDir);
+  const reviewPath = path.join(reviewDir, "slide-narration-review.md");
+  const lines: string[] = [
+    "# Slide Narration Review",
+    "",
+    "Please review each slide narration before TTS.",
+    "",
+  ];
+  for (const segment of input.segments) {
+    const slideFile = `slide-${String(segment.slideIndex).padStart(3, "0")}.png`;
+    const slidePath = path.join(input.slidesDir, slideFile);
+    lines.push(`## Slide ${String(segment.slideIndex).padStart(3, "0")} / Segment ${String(segment.index).padStart(3, "0")}`);
+    lines.push(`- Slide image: ${slidePath}`);
+    lines.push("- Narration:");
+    lines.push("");
+    lines.push(segment.narration.trim() || "(empty)");
+    lines.push("");
+  }
+  await writeFile(reviewPath, `${lines.join("\n")}\n`, "utf-8");
+  return reviewPath;
 }
 
 function parseTimelineMode(raw: string): "tts" | "script" {

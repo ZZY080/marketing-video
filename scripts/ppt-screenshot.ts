@@ -5,6 +5,7 @@ import { ensureDir, execCommand, fail } from "./utils";
 
 const PDF_EXPORT_SUFFIX = ".pdf";
 const PPT_EXTENSIONS = new Set([".pptx", ".ppt"]);
+const PDF_EXTENSIONS = new Set([".pdf"]);
 
 interface ExportOptions {
   pptxPath: string;
@@ -17,13 +18,13 @@ export interface PptScreenshotResult {
 }
 
 export async function screenshotPpt(options: ExportOptions): Promise<PptScreenshotResult> {
-  const pptxPath = path.resolve(options.pptxPath);
-  const ext = path.extname(pptxPath).toLowerCase();
-  if (!PPT_EXTENSIONS.has(ext)) {
-    fail(`不支持的文件类型：${ext || "unknown"}。仅支持 .pptx 或 .ppt。`);
+  const sourcePath = path.resolve(options.pptxPath);
+  const ext = path.extname(sourcePath).toLowerCase();
+  if (!PPT_EXTENSIONS.has(ext) && !PDF_EXTENSIONS.has(ext)) {
+    fail(`不支持的文件类型：${ext || "unknown"}。仅支持 .pptx / .ppt / .pdf。`);
   }
-  await stat(pptxPath).catch(() => {
-    fail(`未找到 PPT 文件：${pptxPath}`);
+  await stat(sourcePath).catch(() => {
+    fail(`未找到输入文件：${sourcePath}`);
   });
 
   await ensureDir(options.outputDir);
@@ -35,21 +36,11 @@ export async function screenshotPpt(options: ExportOptions): Promise<PptScreensh
     await ensureDir(tempPdfDir);
     await ensureDir(tempPngDir);
 
-    const officeBinary = await detectBinary(["soffice", "libreoffice"]);
-    if (!officeBinary) {
-      fail("缺少 LibreOffice（soffice/libreoffice），无法自动导出 PPT。");
-    }
-
-    await execCommand(officeBinary, [
-      "--headless",
-      "--convert-to",
-      "pdf",
-      "--outdir",
+    const pdfPath = await resolvePdfPath({
+      sourcePath,
+      extension: ext,
       tempPdfDir,
-      pptxPath,
-    ]);
-
-    const pdfPath = await resolveExportedPdfPath(tempPdfDir, pptxPath);
+    });
     const pdftoppmBinary = await detectBinary(["pdftoppm"]);
     if (!pdftoppmBinary) {
       fail("缺少 pdftoppm，无法将 PDF 转为 PNG。");
@@ -88,6 +79,30 @@ export async function screenshotPpt(options: ExportOptions): Promise<PptScreensh
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
+}
+
+async function resolvePdfPath(input: {
+  sourcePath: string;
+  extension: string;
+  tempPdfDir: string;
+}): Promise<string> {
+  if (PDF_EXTENSIONS.has(input.extension)) {
+    return input.sourcePath;
+  }
+
+  const officeBinary = await detectBinary(["soffice", "libreoffice"]);
+  if (!officeBinary) {
+    fail("缺少 LibreOffice（soffice/libreoffice），无法自动导出 PPT。");
+  }
+  await execCommand(officeBinary, [
+    "--headless",
+    "--convert-to",
+    "pdf",
+    "--outdir",
+    input.tempPdfDir,
+    input.sourcePath,
+  ]);
+  return resolveExportedPdfPath(input.tempPdfDir, input.sourcePath);
 }
 
 async function detectBinary(candidates: string[]): Promise<string | null> {
