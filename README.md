@@ -2,6 +2,8 @@
 
 Standalone CLI tool for creating commercial-ready teaching/marketing videos from PPT slides and structured narration.
 
+**Agent / automation runs:** use [`AGENTS.md`](AGENTS.md) as the canonical guide (PDF-first frames to avoid missing text, chat-based slide review, `run-interactive` gates, and quality checklist).
+
 Pipeline:
 
 - PPT slides (`slides.pptx`)
