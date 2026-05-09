@@ -1,6 +1,6 @@
 import { readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { detectNarrationLanguage } from "./language";
+import { detectNarrationLanguage, hasHanCharacters } from "./language";
 import { Segment } from "./types";
 import {
   ensureDir,
@@ -70,7 +70,7 @@ export async function renderSegmentsAndConcat(input: RenderInput): Promise<strin
       `segment-${formatIndex(segment.index)}.srt`,
     );
     const clipPath = path.join(input.clipsDir, `clip-${formatIndex(segment.index)}.mp4`);
-    const duration = Math.max(segment.durationSeconds ?? 0, 0.3);
+    const duration = resolveSegmentDuration(segment);
     const subtitleFilter = buildSubtitleFilter(
       segmentSrtPath,
       segment.narration,
@@ -96,6 +96,8 @@ export async function renderSegmentsAndConcat(input: RenderInput): Promise<strin
       audioPath,
       "-filter_complex",
       videoFilter,
+      "-af",
+      `apad=pad_dur=${duration.toFixed(3)}`,
       "-map",
       "[v]",
       "-map",
@@ -118,7 +120,6 @@ export async function renderSegmentsAndConcat(input: RenderInput): Promise<strin
       "aac",
       "-b:a",
       "192k",
-      "-shortest",
       clipPath,
     ]);
     clipPaths.push(clipPath);
@@ -174,18 +175,37 @@ function buildSubtitleFilter(
   narration: string,
   fonts: SubtitleFontConfig,
 ): string {
-  const language = detectNarrationLanguage(narration);
+  const language = hasHanCharacters(narration)
+    ? "zh"
+    : detectNarrationLanguage(narration);
   const fontName = language === "zh" ? fonts.zh : fonts.en;
-  const fontSize = language === "zh" ? 22 : 21;
+  const fontSize = language === "zh" ? 17 : 16;
   const forceStyle = [
     `FontName=${fontName}`,
     `FontSize=${String(fontSize)}`,
-    "Outline=2",
+    "Bold=0",
+    "PrimaryColour=&H00FFFFFF",
+    "OutlineColour=&H5A000000",
+    "BackColour=&H64000000",
+    "BorderStyle=1",
+    "Outline=1",
     "Shadow=0",
+    "Spacing=0",
+    "WrapStyle=2",
+    "MarginL=96",
+    "MarginR=96",
     "Alignment=2",
-    "MarginV=30",
+    "MarginV=14",
   ].join(",");
-  return `subtitles='${normalizeForFilter(segmentSrtPath)}':force_style='${forceStyle}'`;
+  return `subtitles='${normalizeForFilter(segmentSrtPath)}':charenc=UTF-8:force_style='${forceStyle}'`;
+}
+
+function resolveSegmentDuration(segment: Segment): number {
+  const target = segment.targetDurationSeconds;
+  if (typeof target === "number" && Number.isFinite(target) && target > 0) {
+    return Math.max(target, 0.3);
+  }
+  return Math.max(segment.durationSeconds ?? 0, 0.3);
 }
 
 async function resolveSubtitleFonts(): Promise<SubtitleFontConfig> {
