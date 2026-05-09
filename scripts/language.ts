@@ -20,6 +20,7 @@ export function normalizeNarrationWhitespace(text: string): string {
     .replace(/\n+/g, " ")
     .replace(/[ \t]+/g, " ")
     .replace(/\s*([，。！？；：、])/gu, "$1")
+    .replace(/([，。！？；：、])\s+([\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff])/gu, "$1$2")
     .replace(/([（《“‘【])\s+/gu, "$1")
     .replace(/\s+([）》”’】])/gu, "$1")
     .trim();

@@ -221,6 +221,8 @@ Subtitle policy (mandatory):
 - Subtitles must stay page-bound: each `segment-NNN.srt` may only contain text from slide `NNN` narration.
 - Sync priority: use TTS timestamps when available to keep voice and subtitle timing aligned.
 - English subtitles must preserve readable spacing between words; remove garbled replacement glyphs (for example `�` or square boxes).
+- For English (Latin) narration, on-screen punctuation is normalized to **Chinese full-width punctuation** (e.g. `，` `。` `！`); ASCII sentence punctuation must not appear in final SRT.
+- Do not split **English words across cues** (e.g. `T` + `he`). The generator merges obvious TTS timestamp fragments and wraps lines on **word boundaries**; Latin lines are **rebalanced** so the last line is not a tiny orphan when it still fits the previous line.
 
 ### Step 7 - Render
 

@@ -50,11 +50,26 @@ function validateSubtitleContent(
       fail(`第 ${String(segmentIndex)} 段字幕出现多行，需保持单行显示。`);
     }
     for (const textLine of textLines) {
-      if (/\p{P}/u.test(textLine)) {
-        fail(`第 ${String(segmentIndex)} 段字幕仍包含标点：${textLine}`);
+      if (hasForbiddenAsciiSubtitlePunctuation(textLine)) {
+        fail(
+          `第 ${String(segmentIndex)} 段字幕仍包含英文句读标点（请使用中文标点）：${textLine}`,
+        );
       }
     }
   }
+}
+
+function hasForbiddenAsciiSubtitlePunctuation(text: string): boolean {
+  if (/[,;:!?]/.test(text)) {
+    return true;
+  }
+  if (/(?<!\d)\.(?!\d)/.test(text)) {
+    return true;
+  }
+  if (/\u0022/.test(text)) {
+    return true;
+  }
+  return false;
 }
 
 function validateDurationDrift(segment: Segment, maxRatio: number): void {
